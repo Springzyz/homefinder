@@ -21,7 +21,7 @@ export function suggestPlaces(text: string, limit = 8): Place[] {
   const score = (p: { norm: string }) => (p.norm === t ? 0 : p.norm.startsWith(t) ? 1 : p.norm.includes(` ${t}`) ? 2 : p.norm.includes(t) ? 3 : 9);
   return PLACES.map((p) => ({ p, s: score(p) }))
     .filter((x) => x.s < 9)
-    .sort((a, b) => a.s - b.s || (a.p.concelho ? 1 : 0) - (b.p.concelho ? 1 : 0) || a.p.name.localeCompare(b.p.name, "pt"))
+    .sort((a, b) => a.s - b.s || (b.p.concelho ? 1 : 0) - (a.p.concelho ? 1 : 0) || a.p.name.localeCompare(b.p.name, "pt"))
     .slice(0, limit)
     .map(({ p: { norm: _n, ...place } }) => place);
 }

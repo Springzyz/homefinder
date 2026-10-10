@@ -73,3 +73,20 @@ describe("market stats", () => {
     expect(computeMarketStats(ls.slice(0, 5))).toEqual([]);
   });
 });
+
+import { CONCELHOS, resolvePlace, suggestPlaces } from "./index";
+describe("places", () => {
+  it("has all 308 municipalities", () => expect(CONCELHOS.length).toBe(308));
+  it("suggests properly accented names from unaccented input", () => {
+    expect(suggestPlaces("santarem")[0]).toMatchObject({ name: "Santarém", concelho: "Santarém" });
+    expect(suggestPlaces("setubal").map((p) => p.name)).toContain("Setúbal");
+    expect(suggestPlaces("vila nova de gaia")[0]?.concelho).toBe("Vila Nova de Gaia");
+    expect(suggestPlaces("zzzz")).toEqual([]);
+  });
+  it("resolves free text, preferring the concelho over a same-named distrito", () => {
+    expect(resolvePlace("LISBOA")).toMatchObject({ concelho: "Lisboa", distrito: "Lisboa" });
+    expect(resolvePlace("lagoa", "Faro")?.distrito).toBe("Faro");
+    expect(resolvePlace("lagoa", "açores")?.distrito).toBe("Açores");
+    expect(resolvePlace("nowhere")).toBeUndefined();
+  });
+});
