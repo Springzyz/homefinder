@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f7f7f5; --card: #ffffff; --fg: #1a1a18; --muted: #6b6b66; --line: #e4e4df; --accent: #1f6feb;
+  --steal: #c2410c; --great: #b45309; --good: #15803d; --fair: #52525b; --above: #b91c1c;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111110; --card: #1b1b19; --fg: #ececE8; --muted: #9a9a93; --line: #2b2b28; --accent: #5b9bff;
+    --steal: #fb923c; --great: #fbbf24; --good: #4ade80; --fair: #a1a1aa; --above: #f87171;
+  }
+}
+@theme inline {
+  --color-bg: var(--bg); --color-card: var(--card); --color-fg: var(--fg); --color-muted: var(--muted);
+  --color-line: var(--line); --color-accent: var(--accent);
+}
+body { background: var(--bg); color: var(--fg); font-family: ui-sans-serif, system-ui, sans-serif; }
+.input { @apply w-full rounded-lg border border-line bg-card px-3 py-2 text-sm outline-none focus:border-accent; }
+.btn { @apply inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90; }
+.btn-ghost { @apply inline-flex items-center rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-card; }
