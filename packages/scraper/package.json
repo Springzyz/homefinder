@@ -1,0 +1,26 @@
+{
+  "name": "@homefinder/scraper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p .",
+    "migrate": "node --env-file-if-exists=../../.env --import tsx src/migrate.ts",
+    "poll": "node --env-file-if-exists=../../.env --import tsx src/run.ts",
+    "link-telegram": "node --env-file-if-exists=../../.env --import tsx src/link-telegram.ts",
+    "set-email": "node --env-file-if-exists=../../.env --import tsx src/set-email.ts"
+  },
+  "dependencies": {
+    "@homefinder/core": "workspace:*",
+    "cheerio": "^1.0.0",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "22",
+    "@types/pg": "^8.11.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

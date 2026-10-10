@@ -1,0 +1,21 @@
+name: poll
+on:
+  schedule:
+    - cron: "*/20 * * * *" # best-effort; GitHub may delay runs by several minutes
+  workflow_dispatch:
+concurrency: { group: poll, cancel-in-progress: false }
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @homefinder/scraper poll
+        env:
+          SUPABASE_CONNECTIONSTRING: ${{ secrets.SUPABASE_CONNECTIONSTRING }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}

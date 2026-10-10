@@ -1,0 +1,10 @@
+node_modules
+.next
+dist
+.env
+.env.local
+*.log
+.DS_Store
+
+# raw third-party portal pages: local test fixtures only, never published
+packages/scraper/fixtures/
