@@ -1,8 +1,17 @@
 name: poll
 on:
   schedule:
-    - cron: "*/20 * * * *" # best-effort; GitHub may delay runs by several minutes
+    # Every 30 min, 07:00-22:59 UTC (~960 runs-minutes/month, inside the 2000 free minutes of a private repo).
+    - cron: "*/30 7-22 * * *"
   workflow_dispatch:
+    inputs:
+      pages:
+        description: "Result pages per area (use 5 once to backfill market benchmarks)"
+        default: "1"
+      notify:
+        description: "Send alerts (turn off for backfills)"
+        type: boolean
+        default: true
 concurrency: { group: poll, cancel-in-progress: false }
 jobs:
   poll:
@@ -14,8 +23,15 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @homefinder/scraper poll
+      - name: Poll portals
         env:
           SUPABASE_CONNECTIONSTRING: ${{ secrets.SUPABASE_CONNECTIONSTRING }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          PAGES: ${{ inputs.pages }}
+          NOTIFY: ${{ inputs.notify }}
+        run: |
+          ARGS=""
+          [[ "$PAGES" =~ ^[1-9]$ ]] && ARGS="--pages=$PAGES"
+          [ "$NOTIFY" = "false" ] && ARGS="$ARGS --no-notify"
+          pnpm --filter @homefinder/scraper poll $ARGS
