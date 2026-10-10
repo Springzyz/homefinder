@@ -8,3 +8,5 @@ dist
 
 # raw third-party portal pages: local test fixtures only, never published
 packages/scraper/fixtures/
+*.tsbuildinfo
+next-env.d.ts
