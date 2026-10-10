@@ -9,10 +9,14 @@ import { db } from "./db";
 import { BlockedError, politeGet, sleep } from "./fetch";
 import { sendEmail, sendTelegram, type Alert } from "./notify";
 
-export const ADAPTERS: PortalAdapter[] = [olx, casasapo];
+// OLX is parked: its CDN rejects our HTTP client (403) while serving other clients, i.e. a bot filter we choose not to work around.
+// Re-add `olx` here if that changes. Imovirtual/Supercasa/OLX can come in via saved-search alert emails instead.
+export const ADAPTERS: PortalAdapter[] = [casasapo];
+export const PARKED_ADAPTERS: PortalAdapter[] = [olx];
 const MAX_ALERTS_PER_RUN = 25;
 const REQUEST_GAP_MS = 7000; // plus up to 4s of jitter, see gap()
-const gap = () => sleep(REQUEST_GAP_MS + Math.random() * 4000);
+// Backfills (pages > 1) crawl slowly: Casa Sapo answers 429 after only a few quick requests.
+const gap = (pages: number) => (pages > 1 ? sleep(30_000 + Math.random() * 15_000) : sleep(REQUEST_GAP_MS + Math.random() * 4000));
 
 interface SearchRow { id: number; name: string; filters: SearchFilters; min_label: Label; channels: string[] }
 interface Event { id: number; listing: Listing; priceDrop?: number }
@@ -50,7 +54,7 @@ export async function run(opts: { notify: boolean; pages: number; portal?: strin
           const ev = await upsert(l);
           if (ev) events.push(ev);
         }
-        await gap();
+        await gap(opts.pages);
       }
     } catch (e) {
       error = e instanceof BlockedError ? `blocked: ${e.message}` : String(e);
