@@ -1,6 +1,7 @@
 "use server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { resolvePlace } from "@homefinder/core";
 import { q } from "@/lib/db";
 
 const TYPOLOGIES = ["T0", "T1", "T2", "T3", "T4", "T5+"];
@@ -14,6 +15,25 @@ const num = (v: FormDataEntryValue | null) => {
 };
 const pick = (f: FormData, key: string, allowed: string[]) => f.getAll(key).map(String).filter((x) => allowed.includes(x));
 
+/** Picked places ("distrito|concelho"), plus whatever was typed but not clicked, if it names a real place. */
+function readLocations(form: FormData) {
+  const seen = new Set<string>();
+  const out: { distrito: string; concelho?: string }[] = [];
+  const add = (p?: { distrito: string; concelho?: string }) => {
+    if (!p) return;
+    const k = `${p.distrito}|${p.concelho ?? ""}`;
+    if (!seen.has(k)) { seen.add(k); out.push({ distrito: p.distrito, ...(p.concelho ? { concelho: p.concelho } : {}) }); }
+  };
+  for (const v of form.getAll("loc").map(String)) {
+    const [d = "", c = ""] = v.split("|");
+    const hit = resolvePlace(c || d, c ? d : undefined);
+    add(hit && { distrito: hit.distrito, concelho: c ? hit.concelho : undefined });
+  }
+  const typed = String(form.get("locText") ?? "").trim();
+  if (typed) { const hit = resolvePlace(typed); add(hit && { distrito: hit.distrito, concelho: hit.concelho }); }
+  return out;
+}
+
 const idOf = (f: FormData) => {
   const v = String(f.get("id") ?? "");
   return /^\d+$/.test(v) ? Number(v) : null;
@@ -22,11 +42,10 @@ const idOf = (f: FormData) => {
 export async function saveSearch(form: FormData) {
   const id = idOf(form);
   const name = String(form.get("name") ?? "").trim() || "Untitled search";
-  const concelho = String(form.get("concelho") ?? "").trim();
-  const distrito = String(form.get("distrito") ?? "").trim();
-  if (!concelho && !distrito) redirect(id ? `/searches/${id}?error=location` : "/searches/new?error=location");
+  const locations = readLocations(form);
+  if (!locations.length) redirect(id ? `/searches/${id}?error=location` : "/searches/new?error=location");
   const filters = {
-    locations: [{ distrito: distrito || undefined, concelho: concelho || undefined }],
+    locations,
     priceMin: num(form.get("priceMin")), priceMax: num(form.get("priceMax")),
     ppsqmMax: num(form.get("ppsqmMax")), areaMin: num(form.get("areaMin")),
     typologies: pick(form, "typologies", TYPOLOGIES), conditions: pick(form, "conditions", CONDITIONS),

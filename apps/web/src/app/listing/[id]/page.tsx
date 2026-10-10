@@ -17,7 +17,7 @@ export default async function ListingPage({ params }: { params: Promise<{ id: st
   return (
     <article className="mx-auto max-w-2xl space-y-5">
       <Link href="/" className="text-sm text-muted hover:text-fg">← Deals</Link>
-      {l.image_url && /* eslint-disable-next-line @next/next/no-img-element */ <img src={l.image_url} alt="" className="w-full rounded-xl" />}
+      {l.image_url?.startsWith("http") && /* eslint-disable-next-line @next/next/no-img-element */ <img src={l.image_url} alt="" className="w-full rounded-xl" />}
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{eur(l.price)}</h1>

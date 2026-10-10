@@ -11,7 +11,8 @@ import { sendEmail, sendTelegram, type Alert } from "./notify";
 
 export const ADAPTERS: PortalAdapter[] = [olx, casasapo];
 const MAX_ALERTS_PER_RUN = 25;
-const REQUEST_GAP_MS = 4000;
+const REQUEST_GAP_MS = 7000; // plus up to 4s of jitter, see gap()
+const gap = () => sleep(REQUEST_GAP_MS + Math.random() * 4000);
 
 interface SearchRow { id: number; name: string; filters: SearchFilters; min_label: Label; channels: string[] }
 interface Event { id: number; listing: Listing; priceDrop?: number }
@@ -49,7 +50,7 @@ export async function run(opts: { notify: boolean; pages: number; portal?: strin
           const ev = await upsert(l);
           if (ev) events.push(ev);
         }
-        await sleep(REQUEST_GAP_MS);
+        await gap();
       }
     } catch (e) {
       error = e instanceof BlockedError ? `blocked: ${e.message}` : String(e);
@@ -90,7 +91,7 @@ async function upsert(l: Listing): Promise<Event | undefined> {
     await pool.query("insert into price_history(listing_id, price) values ($1,$2)", [id, l.price]);
     return { id, listing: l };
   }
-  await pool.query("update listings set last_seen_at=now(), active=true, price=$2 where id=$1", [existing.id, l.price]);
+  await pool.query("update listings set last_seen_at=now(), active=true, price=$2, image_url=coalesce(image_url, $3) where id=$1", [existing.id, l.price, l.imageUrl ?? null]);
   const old = Number(existing.price);
   if (old !== l.price) {
     await pool.query("insert into price_history(listing_id, price) values ($1,$2)", [existing.id, l.price]);

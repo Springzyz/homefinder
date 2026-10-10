@@ -1,8 +1,7 @@
 name: poll
 on:
-  schedule:
-    # Every 30 min, 07:00-22:59 UTC (~960 runs-minutes/month, inside the 2000 free minutes of a private repo).
-    - cron: "*/30 7-22 * * *"
+  # No schedule: OLX and Casa Sapo block GitHub's datacenter IPs (403/429), so polling runs on a local
+  # systemd timer instead. Manual runs stay available for experiments.
   workflow_dispatch:
     inputs:
       pages:

@@ -4,3 +4,5 @@ export * from "./scoring";
 export * from "./matching";
 export * from "./dedupe";
 export * from "./stats";
+export * from "./places";
+export * from "./locations";

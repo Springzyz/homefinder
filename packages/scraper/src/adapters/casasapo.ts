@@ -9,6 +9,12 @@ const CONDITION: [RegExp, Condition][] = [
   [/usado|renovado/i, "used"],
 ];
 
+/** Lazy-loaded cards carry a 1x1 data: placeholder in `src`; the real photo is in `data-src`. */
+function realImage(img: cheerio.Cheerio<any>): string | null {
+  const url = [img.attr("data-src"), img.attr("src")].find((u) => u?.startsWith("http"));
+  return url ? url.replace("/Z360x270/", "/Z720x540/") : null;
+}
+
 const num = (s: string) => Number(s.replace(/[^\d,]/g, "").replace(",", "."));
 
 export const casasapo: PortalAdapter = {
@@ -45,7 +51,7 @@ export const casasapo: PortalAdapter = {
         distrito: (distritoRaw ?? concelho).replace(/^Distrito de\s+/i, ""),
         concelho,
         freguesia: freguesia || null,
-        imageUrl: $(el).find("picture img").first().attr("src") ?? null,
+        imageUrl: realImage($(el).find("picture img").first()),
       });
     });
     return out;

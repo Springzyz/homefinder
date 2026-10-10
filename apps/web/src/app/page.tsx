@@ -65,7 +65,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<{ 
         <div className="grid gap-4 sm:grid-cols-2">
           {items.map((r) => (
             <Link key={r.id} href={`/listing/${r.id}`} className="overflow-hidden rounded-xl border border-line bg-card hover:border-accent">
-              {r.image_url && /* eslint-disable-next-line @next/next/no-img-element */ <img src={r.image_url} alt="" loading="lazy" className="h-44 w-full object-cover" />}
+              {r.image_url?.startsWith("http") && /* eslint-disable-next-line @next/next/no-img-element */ <img src={r.image_url} alt="" loading="lazy" className="h-44 w-full object-cover" />}
               <div className="space-y-1.5 p-4">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-lg font-semibold">{eur(r.price)}</span>

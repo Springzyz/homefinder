@@ -25,3 +25,11 @@ for (const [name, adapter] of [["olx", olx], ["casasapo", casasapo]] as const) {
     });
   });
 }
+
+describe.skipIf(!existsSync(path("casasapo")))("casasapo images", () => {
+  it("never returns data: placeholders and finds most photos", () => {
+    const ls = casasapo.parse(fx("casasapo"));
+    expect(ls.every((l) => !l.imageUrl || l.imageUrl.startsWith("http"))).toBe(true);
+    expect(ls.filter((l) => l.imageUrl).length / ls.length).toBeGreaterThan(0.9);
+  });
+});
