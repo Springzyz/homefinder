@@ -27,7 +27,8 @@ function readLocations(form: FormData) {
   for (const v of form.getAll("loc").map(String)) {
     const [d = "", c = ""] = v.split("|");
     const hit = resolvePlace(c || d, c ? d : undefined);
-    add(hit && { distrito: hit.distrito, concelho: c ? hit.concelho : undefined });
+    // Never alter a stored place just because the lookup list doesn't know it.
+    add({ distrito: hit?.distrito ?? d, concelho: c ? (hit?.concelho ?? c) : undefined });
   }
   const typed = String(form.get("locText") ?? "").trim();
   if (typed) { const hit = resolvePlace(typed); add(hit && { distrito: hit.distrito, concelho: hit.concelho }); }
