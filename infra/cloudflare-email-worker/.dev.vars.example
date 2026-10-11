@@ -1,0 +1,2 @@
+# Copy to .dev.vars for `wrangler dev` (git-ignored). Placeholder only: generate a real token, e.g. `openssl rand -hex 32`.
+HOMEFINDER_QUEUE_TOKEN=replace-with-a-long-random-token-at-least-32-chars

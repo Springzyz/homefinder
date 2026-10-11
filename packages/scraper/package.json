@@ -9,7 +9,8 @@
     "migrate": "node --env-file-if-exists=../../.env --import tsx src/migrate.ts",
     "poll": "node --env-file-if-exists=../../.env --import tsx src/run.ts",
     "link-telegram": "node --env-file-if-exists=../../.env --import tsx src/link-telegram.ts",
-    "set-email": "node --env-file-if-exists=../../.env --import tsx src/set-email.ts"
+    "set-email": "node --env-file-if-exists=../../.env --import tsx src/set-email.ts",
+    "ingest-emails": "node --env-file-if-exists=../../.env --import tsx src/ingest-emails.ts"
   },
   "dependencies": {
     "@homefinder/core": "workspace:*",

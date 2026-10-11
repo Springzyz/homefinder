@@ -6,3 +6,5 @@ export * from "./dedupe";
 export * from "./stats";
 export * from "./places";
 export * from "./locations";
+export * from "./numbers";
+export * from "./freguesias";

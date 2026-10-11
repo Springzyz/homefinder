@@ -8,6 +8,8 @@ Personal Portuguese home-deal notifier. Poll portals → store listings in Supab
 ## Layout and commands
 - `packages/core`: pure TS logic + vitest (scoring, matching, dedupe, stats, places). No I/O.
 - `packages/scraper`: adapters (`src/adapters/*`), `fetch.ts` (polite fetch), `pipeline.ts` (the run), `notify.ts`, CLIs (`run.ts`, `migrate.ts`, `link-telegram.ts`, `set-email.ts`).
+- `infra/cloudflare-email-worker`: Cloudflare Email Worker + D1 queue + authenticated pull API (own `package.json`, **outside** the pnpm workspace; install with `pnpm install --ignore-workspace`; tests use Node's `node:sqlite` as a D1 shim, loaded via `createRequire`). Never deploy/configure Cloudflare without explicit approval.
+- `packages/scraper/src/email-ingestion/` (queue client, ingest loop) and `adapters/email/` (Imovirtual/Supercasa parsers). CLI: `pnpm --filter @homefinder/scraper ingest-emails [--dry-run|--stats|--limit=N|--no-notify|--no-seed]`. Guide: `docs/cloudflare-email-ingestion.md`.
 - `apps/web`: Next.js 15 App Router, Tailwind 4, server actions, direct `pg` access, password gate in `src/middleware.ts` + `src/lib/session.ts`.
 - `supabase/migrations/*.sql`, applied by `pnpm --filter @homefinder/scraper migrate` (tracked in `_migrations`).
 - Node is installed via fnm at `~/.local/share/fnm`. Shell state does not persist, so prefix commands with `export PATH=$HOME/.local/share/fnm/aliases/default/bin:$PATH`.
@@ -25,6 +27,9 @@ Personal Portuguese home-deal notifier. Poll portals → store listings in Supab
 7. Time zones: the DB and GitHub timestamps are UTC; the machine is BST. Don't misread run times.
 8. Tell the user plainly about mistakes, failed checks, and skipped steps.
 
+9. Follow `HOMEFINDER_CLAUDE_IMPLEMENTATION_BRIEF.md` (user-authored, untracked) for the email-ingestion work: it forbids committing, pushing, deploying, DNS or live-timer changes unless authorised in the current session.
+10. Never use broad `pkill -f`/`pgrep -f` patterns that appear in your own command line (it killed the shell twice: `rm -rf .wrangler .dev.vars` matched `wrangler.*dev`). Kill by PID after listing, or run the kill in its own command.
+
 ## Key decisions
 - Auth: single password + signed cookie (not Supabase Auth); DB accessed server-side via the pooler connection string (no anon key in the browser). RLS enabled, no public policies.
 - Supabase **direct** host is IPv6-only and unreachable from WSL → use the Session pooler string; password must not keep the template's `[ ]`.
@@ -33,23 +38,25 @@ Personal Portuguese home-deal notifier. Poll portals → store listings in Supab
 - Imovirtual/Supercasa (Cloudflare) → via their saved-search alert emails (needs sample emails from the user). Idealista → official API, access requested, don't count on it.
 - First successful run per portal seeds silently (no alerts). Unrated listings (no benchmark yet) still alert. Alerts capped at 25/run.
 - Place list: 308 municipalities mapped to districts (Azores/Madeira as regions), validated against geoapi's name list; `suggestPlaces` / `resolvePlace` in `packages/core/src/places.ts`.
+- Email ingestion: Cloudflare Email Routing → Email Worker → D1 queue; the local scraper **pulls** (Worker can't reach localhost; nothing exposed). Ack only after processing; at-least-once, idempotent via (portal,portal_id) upserts + unique notifications. Parsers read only grounded fields, reject (never guess) ambiguous price/area/place, only accept https links on portal hosts. **Parsers are UNVERIFIED**: written against synthetic fixtures; real sanitised samples are required before trusting them. `processListings()` in `pipeline.ts` is the shared seam (run() uses `upsertListings`/`finalize` too).
+- Workers Free: 10 ms CPU/invocation → raw mail cap 512 KiB. D1 Free: 5M reads/100k writes per day.
 - Scoring: median €/m² at freguesia → concelho → distrito, n ≥ 15, thresholds 25/15/5 %.
 
 ## Current state (update me)
-- Core, Casa Sapo adapter, pipeline, notifiers, web UI (deals, searches with location picker, listing, market, settings), docs: done and pushed to `main`.
-- DB: migration `0001_init.sql` applied; one search ("Lisboa T2 ≤ 400k", min label good, telegram+email). ~50 Casa Sapo listings, almost no benchmarks (stats need ≥15 per area+typology).
-- Telegram linked, email address set, Resend key stored in `.env`. Email delivery **not yet tested**.
-- Timer installed; first real run expected the morning after setup. Not yet verified.
-- Casa Sapo was rate-limited (429) during testing; benchmarks backfill (`--pages=5 --no-notify`, ~4 min) still to run after cooldown.
-- WSL may sleep and pause the timer; keep-alive (Windows scheduled task) undecided.
+- **Email ingestion committed locally** (not pushed unless stated in the log). Real values (ingest address, D1 id, queue URL/token, sender allowlist) live only in `.env` and the **untracked-by-intent local edit of `infra/cloudflare-email-worker/wrangler.jsonc`**; the committed version has placeholders. After any commit, the real file must be restored (a copy is not kept in the repo); never `git add` that file with real values.
+- **Cloudflare**: Worker `homefinder-email-ingest` deployed with `ALLOWED_SENDERS` = the Idealista sender + the user's own Gmail (for manual forwards); domains empty. Gmail filter on `naoresponder@idealista.pt` forwards to the ingest address (address verified). Unverified risk: the envelope sender of filter-forwarded mail was never observed (only a manual forward); if the daily mail stops arriving, check `wrangler tail` for `rejected: sender` and relax the allowlist.
+- **Parsers**: Idealista parser is built from one real mail (only "Novidade" cards; place via concelho, else via the freguesia lookup in `packages/core/src/freguesias.ts`). Imovirtual/Supercasa parsers are still UNVERIFIED (synthetic fixtures only).
+- **First real ingest done**: 1 Idealista listing stored (seeded silently), 3 test messages quarantined; queue empty.
+- **Supabase/Telegram/Resend**: migration applied; one search; Telegram linked; email delivery untested. Few benchmarks (backfill `--pages=5 --no-notify` not run).
+- **Local timer** `homefinder-poll.timer` (Casa Sapo only) installed. `ingest-emails` is NOT scheduled yet.
 
 ## Next steps
-1. Run the backfill; manually start `homefinder-poll.service` once; confirm a Telegram alert and an email arrive end to end.
-2. WSL keep-alive decision.
-3. Imovirtual/Supercasa alert-email parser (ask the user for sample emails; IMAP or forwarding).
-4. Idealista adapter if API access is granted.
-5. Deploy the web UI (Vercel free tier) with the same env vars; add `.env.example` references to docs (done).
-6. Possible: price-drop re-alerts, freguesia-level locations, digest mode.
+1. Verify tomorrow's daily Idealista mail arrives through the Gmail filter (queue stats / `ingest-emails --dry-run`); if rejected, see the risk above.
+2. Schedule `ingest-emails` (systemd user timer) once the first filter-forwarded mail has been seen working; needs user approval.
+3. User creates Imovirtual and Supercasa saved-search alerts addressed to the ingest address; sanitise real samples and fix those parsers.
+4. Optional: tie-break shared freguesia names using the concelhos of the user's saved searches.
+5. Older items: benchmark backfill; verify the first timer run; WSL keep-alive; deploy the web UI; Idealista API adapter if granted.
+6. Check the Worker's CPU metrics after the first real emails (Workers Free = 10 ms CPU).
 
 ## Session log (append one entry per prompt)
 - **Plan**: asked requirements; chose Email+Telegram, free-tier cloud, hybrid scraping, single user/buy-only; wrote the plan.
@@ -62,3 +69,10 @@ Personal Portuguese home-deal notifier. Poll portals → store listings in Supab
 - **Poll debugging**: Actions run was green but both portals blocked the runner → moved to local systemd timer, removed Actions schedule, parked OLX, slowed backfills. Mistake: pushed unfinished code once, repaired within minutes.
 - **Location picker**: 308 municipalities, accent-insensitive suggestions, multi-place searches, tests; untracked build artifacts.
 - **Docs (this prompt)**: rewrote `README.md`, added `.env.example` and this file.
+- **Email ingestion (brief)**: followed `HOMEFINDER_CLAUDE_IMPLEMENTATION_BRIEF.md`. Refactored `pipeline.ts` into reusable `upsertListings`/`finalize`/`processListings`; added core number parsing (`numbers.ts`); built the Worker (D1 migration, MIME limits, idempotency key, authenticated pull/ack/fail/stats API, retention cron), scraper queue client + ingest CLI + two portal parsers, synthetic fixtures, docs. Tests caught two parser bugs (flattened text glued fields; first-match place guessing) and I lowered the mail cap after verifying the 10 ms Free CPU limit. Did not commit/push/deploy.
+- **Cloudflare deploy**: with explicit approval, logged in wrangler (OAuth), created D1, applied migration, deployed Worker, uploaded the token secret (piped from `.env`, never displayed), verified /health, auth (401), and `ingest-emails --stats`. workers.dev certificate took a few minutes.
+- **Pause (2026-10-11)**: user paused the session to save RAM. Learned the user's only Idealista mail is a login notice, not an alert, and recorded the safe plan (create an alert first, filter on real From + subject). Rewrote Resume/Current state/Next steps in this file for the next session. No code changed in this step.
+- **Resumed after pause**: loaded CLAUDE.md, checked the queue (still only the 2 test messages), recorded the real Idealista sender/subject from the user's screenshot and the plan to obtain a sanitised sample via manual Gmail Forward. No code changed.
+- **Idealista parser**: the user's Gmail forwarding to the ingest address works (verified address; filter on `naoresponder@idealista.pt`, the real daily-summary sender, subject "Resumo diário de novos imóveis"; a manual forward keeps the user's own Gmail as sender with the original From inside the body). Added `adapters/email/idealista.ts` (+ `cardFields` hook in `shared.ts`, `idealista` in `EmailPortal`), sanitised synthetic fixture `fixtures/email/idealista-daily-summary.html`, tests (core 33, scraper 72 pass, typecheck clean). Rules: only "Novidade" cards (user's choice), price = the "€" figure not "€/m²", area from the details line only (typology stripped so "T3 100 m²" is not 3100), advertiser free text never read. Open problem: cards give only street + neighbourhood ("Rua do Beato, Beato"); the real sample's only Novidade was rejected `location_unresolved` (neighbourhood is not a concelho), so it would be quarantined. Needs a user decision (neighbourhood→concelho mapping vs. other). Not deployed; `ALLOWED_SENDERS` still empty; queue still holds 4 old messages (not acked). Nothing committed.
+- **Freguesia lookup (user chose option 1/"find where it is")**: added `packages/core/src/freguesias.ts` + generated `freguesias.data.ts` (3,254 freguesias → 306 concelhos, from Aldeias Portuguesas v2026.2, CC BY-SA 4.0, attribution in the file header; the geoapi free API was rate-limited, 429). `shared.ts` falls back to it only when no concelho is named: the LAST component that is a known freguesia decides; a name shared by several concelhos must be narrowed by an earlier freguesia component, else `location_unresolved` (never guessed). It does NOT set `Listing.freguesia` (kept null to avoid mixing with Casa Sapo's freguesia strings). Real sample now parses to 1 listing (Beato → Lisboa). Checks: typecheck clean, core 33, scraper 75 pass; web build not re-run. Possible tie-break for shared names: prefer concelhos in the user's own saved searches (not built). Still not deployed/committed; queue unchanged.
+- **Rollout (user said "do all of those")**: ran the real `ingest-emails` (1 listing, 3 quarantined); set `ALLOWED_SENDERS` and redeployed the Worker (health ok); verified typecheck, core 33 / scraper 75 / worker 46 tests, web build; scanned the files to commit for `.env` values and personal data (only the real `wrangler.jsonc` leaked, so it is committed with placeholders). Committed locally; not pushed.

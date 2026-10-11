@@ -1,0 +1,26 @@
+// No secrets here. Secrets are set with `wrangler secret put` (see docs/cloudflare-email-ingestion.md).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "homefinder-email-ingest",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "homefinder-email-queue",
+      // Id printed by `wrangler d1 create homefinder-email-queue` (not a secret).
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    // The Email Routing address that forwards to this Worker (anything else is rejected).
+    "HOMEFINDER_INGEST_ADDRESS": "alerts@example.com",
+    // Comma-separated exact sender addresses and/or sender domains. Empty = accept any sender ("discovery mode").
+    // Fill these in once you have seen real senders (see the guide).
+    "ALLOWED_SENDERS": "",
+    "ALLOWED_SENDER_DOMAINS": ""
+  },
+  // Daily retention cleanup (Cron Triggers are available on the Free plan).
+  "triggers": { "crons": ["17 3 * * *"] }
+}

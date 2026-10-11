@@ -1,6 +1,6 @@
 import {
   atLeast, computeMarketStats, dedupeKey, matchesSearch, scoreListing,
-  type Label, type Listing, type Score, type SearchFilters, type Typology,
+  type Label, type Listing, type Portal, type Score, type SearchFilters, type Typology,
 } from "@homefinder/core";
 import { casasapo } from "./adapters/casasapo";
 import { olx } from "./adapters/olx";
@@ -19,7 +19,7 @@ const REQUEST_GAP_MS = 7000; // plus up to 4s of jitter, see gap()
 const gap = (pages: number) => (pages > 1 ? sleep(30_000 + Math.random() * 15_000) : sleep(REQUEST_GAP_MS + Math.random() * 4000));
 
 interface SearchRow { id: number; name: string; filters: SearchFilters; min_label: Label; channels: string[] }
-interface Event { id: number; listing: Listing; priceDrop?: number }
+export interface Event { id: number; listing: Listing; priceDrop?: number }
 
 const toListing = (r: any): Listing => ({
   portal: r.portal, portalId: r.portal_id, url: r.url, title: r.title, price: Number(r.price), areaM2: Number(r.area_m2),
@@ -42,28 +42,54 @@ export async function run(opts: { notify: boolean; pages: number; portal?: strin
   const seeding = new Set<string>();
 
   for (const adapter of ADAPTERS.filter((a) => !opts.portal || a.portal === opts.portal)) {
-    const { rows: prior } = await pool.query("select 1 from scrape_runs where portal=$1 and ok limit 1", [adapter.portal]);
-    if (!prior.length) seeding.add(adapter.portal);
+    if (await isSeeding(adapter.portal)) seeding.add(adapter.portal);
     let found = 0;
     let error: string | undefined;
     try {
       for (const loc of locs.values()) for (let page = 1; page <= opts.pages; page++) for (const url of adapter.searchUrls(loc, page)) {
         const listings = adapter.parse(await politeGet(url));
         found += listings.length;
-        for (const l of listings) {
-          const ev = await upsert(l);
-          if (ev) events.push(ev);
-        }
+        events.push(...(await upsertListings(listings)));
         await gap(opts.pages);
       }
     } catch (e) {
       error = e instanceof BlockedError ? `blocked: ${e.message}` : String(e);
       console.error(`[${adapter.portal}] ${error}`);
     }
-    await pool.query("insert into scrape_runs(portal, ok, listings_found, error) values ($1,$2,$3,$4)", [adapter.portal, !error, found, error ?? null]);
+    await recordRun(adapter.portal, !error, found, error);
     console.log(`[${adapter.portal}] found=${found} ${error ? "FAILED" : "ok"}`);
   }
 
+  await finalize(searches, events, seeding, opts.notify);
+}
+
+/** A portal is "seeding" until it has had one successful run: the first batch is stored silently, without alerts. */
+export async function isSeeding(portal: string): Promise<boolean> {
+  const { rows } = await db().query("select 1 from scrape_runs where portal=$1 and ok limit 1", [portal]);
+  return rows.length === 0;
+}
+
+export async function recordRun(portal: string, ok: boolean, found: number, error?: string) {
+  await db().query("insert into scrape_runs(portal, ok, listings_found, error) values ($1,$2,$3,$4)", [portal, ok, found, error ?? null]);
+}
+
+export async function loadSearches(): Promise<SearchRow[]> {
+  return (await db().query<SearchRow>("select * from searches where active")).rows;
+}
+
+/** Upsert listings; returns the events (new listing or price drop) that may trigger alerts. */
+export async function upsertListings(listings: Listing[]): Promise<Event[]> {
+  const events: Event[] = [];
+  for (const l of listings) {
+    const ev = await upsert(l);
+    if (ev) events.push(ev);
+  }
+  return events;
+}
+
+/** Refresh market stats, score the events, and (optionally) alert. Events from seeding portals are never alerted. */
+export async function finalize(searches: SearchRow[], events: Event[], seeding: Set<string>, notify: boolean) {
+  const pool = db();
   const stats = await refreshStats();
   const scored = new Map<number, Score>();
   for (const ev of events) {
@@ -77,7 +103,23 @@ export async function run(opts: { notify: boolean; pages: number; portal?: strin
     );
   }
   console.log(`events=${events.length} stats=${stats.length}`);
-  if (opts.notify) await dispatch(searches, events.filter((e) => !seeding.has(e.listing.portal)), scored);
+  if (notify) await dispatch(searches, events.filter((e) => !seeding.has(e.listing.portal)), scored);
+}
+
+/**
+ * Entry point for listings that did not come from a polled adapter (e.g. parsed alert emails).
+ * Same business path as run(): upsert -> stats -> score -> match saved searches -> notify.
+ * Safe to repeat: upserts are keyed by (portal, portal_id) and alerts are unique per (search, listing, channel).
+ */
+export async function processListings(
+  portal: Portal,
+  listings: Listing[],
+  opts: { notify: boolean; seed?: boolean },
+): Promise<{ stored: number; events: number; seeded: boolean }> {
+  const seeded = opts.seed ?? (await isSeeding(portal));
+  const events = await upsertListings(listings);
+  await finalize(await loadSearches(), events, new Set(seeded ? [portal] : []), opts.notify);
+  return { stored: listings.length, events: events.length, seeded };
 }
 
 /** Insert or refresh a listing. Returns an event when it is new or its price dropped. */

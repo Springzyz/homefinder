@@ -34,6 +34,8 @@ Monorepo (pnpm workspaces, TypeScript):
 | `packages/core` | Pure logic with unit tests: types, scoring and labels, search matching, cross-portal dedupe, market statistics, the Portuguese place list and accent-insensitive lookup. |
 | `packages/scraper` | Portal adapters, polite fetcher, pipeline, Telegram/Resend notifiers, CLI helpers. |
 | `apps/web` | Next.js 15 + Tailwind 4 UI: deals dashboard, searches, listing detail, market medians, settings/health. |
+| `infra/cloudflare-email-worker` | Cloudflare Email Worker + D1 queue that receives portal alert emails (outside the pnpm workspace; own install and tests). |
+| `docs/` | Detailed guides, e.g. [email ingestion](docs/cloudflare-email-ingestion.md). |
 | `supabase/migrations` | SQL schema. |
 | `.github/workflows/poll.yml` | Manual-only workflow (see *Portals* for why there is no schedule). |
 
@@ -51,9 +53,24 @@ Monorepo (pnpm workspaces, TypeScript):
 | Casa Sapo | ✅ Polled. Strict rate limit (HTTP 429 after a few quick requests), so the fetcher is slow and stops on the first refusal. |
 | OLX | ⏸ Adapter written and tested, **parked**: its CDN returns 403 to Node's HTTP client while serving other clients, which is a bot filter we choose not to work around. Re-enable by adding `olx` to `ADAPTERS` in `packages/scraper/src/pipeline.ts`. |
 | Idealista | ⏳ Waiting for official Search API access (requested). |
-| Imovirtual, Supercasa | 📧 Planned via the portals' own saved-search **alert emails** (Cloudflare challenges block direct access). Not built yet. |
+| Imovirtual, Supercasa | 📧 Via the portals' own saved-search **alert emails** (direct access is blocked). Implemented and tested with **synthetic** fixtures only; **not validated against real emails and not deployed**. See [Email ingestion](#email-ingestion). |
 
 GitHub Actions runners were tried and are **blocked** by the portals (datacenter IPs), so polling runs from a local systemd timer. Be a good citizen: low frequency, newest-first pages only, jittered delays, and never try to evade a block.
+
+## Email ingestion
+
+Alert emails from Imovirtual and Supercasa are received by a Cloudflare Email Worker, queued in D1, and **pulled** by a
+local command that parses them and feeds the same pipeline (upsert → score → match → notify). Nothing on your machine is
+exposed, no portal protection is bypassed, no paid API is used.
+
+```bash
+pnpm --filter @homefinder/scraper ingest-emails --dry-run   # parse only
+pnpm --filter @homefinder/scraper ingest-emails             # process for real
+```
+
+Setup is manual (Cloudflare account, a domain, Email Routing); nothing is deployed or scheduled automatically.
+Details, limits, retention and troubleshooting: **[docs/cloudflare-email-ingestion.md](docs/cloudflare-email-ingestion.md)**.
+The portal parsers need testing against sanitised real alert emails before they can be trusted.
 
 ## Setup
 
@@ -73,6 +90,7 @@ pnpm --filter @homefinder/scraper set-email you@example.com
 | --- | --- |
 | `SUPABASE_CONNECTIONSTRING` | Postgres URL. Use the **Session pooler** string (IPv4); the direct host is IPv6-only. Insert the password **without** the `[ ]` that Supabase's template shows. |
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather. |
+| `CLOUDFLARE_EMAIL_QUEUE_URL`, `CLOUDFLARE_EMAIL_QUEUE_TOKEN` | Only for email ingestion: the Worker URL and the shared bearer token. |
 | `RESEND_API_KEY` | Optional; enables email. With Resend's free test sender, mail only reaches your own account address. |
 | `RESEND_FROM` | Optional sender, default `HomeFinder <onboarding@resend.dev>`. |
 | `APP_PASSWORD` | Password for the web app. |
@@ -122,6 +140,6 @@ The app connects to Postgres directly from the server with the connection string
 
 Done: core logic, Casa Sapo adapter, pipeline, Telegram + email notifiers, web UI, location picker, local scheduling.
 
-Next: benchmark backfill and a first real timer run, WSL keep-alive, Imovirtual/Supercasa alert-email parsing, Idealista API adapter (if access is granted), deployment of the web UI (e.g. Vercel free tier), an `.env.example`.
+Next: benchmark backfill and a first real timer run, WSL keep-alive, deploying the email Worker and validating the Imovirtual/Supercasa parsers with real sanitised emails, Idealista API adapter (if access is granted), deployment of the web UI (e.g. Vercel free tier), an `.env.example`.
 
 Not built (by design, for now): SMS, multi-user accounts, rentals.
